@@ -183,15 +183,23 @@ def extract_codes(path=None, img=None):
 app = FastAPI()
 
 
+from fastapi import FastAPI, Request
+import urllib.parse
+
 @app.get("/extract")
-def extract_api(image_url: str):
-    resp = requests.get(image_url, timeout=10)
+def extract_api(request: Request):
+    image_url = request.query_params.get("image_url")
+
+    if not image_url:
+        return {"error": "Missing image_url parameter"}
+
+    # Auto-fix unencoded URLs (important for Discord CDN links)
+    image_url = urllib.parse.unquote(image_url)
+
+    resp = requests.get(image_url, timeout=15)
     arr = np.frombuffer(resp.content, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     codes = extract_codes(img=img)
     return {"codes": codes}
 
-
-if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8080)
