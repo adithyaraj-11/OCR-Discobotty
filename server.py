@@ -21,9 +21,6 @@ with open(ALPHABET, "r", encoding="utf-8") as f:
 
 blank_id = 0
 
-# -------------------------
-# Load sessions
-# -------------------------
 det = ort.InferenceSession(DET_MODEL, providers=["CPUExecutionProvider"])
 rec = ort.InferenceSession(REC_MODEL, providers=["CPUExecutionProvider"])
 
