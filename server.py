@@ -9,7 +9,6 @@ from extract import extract_codes
 
 app = FastAPI()
 
-# Pretend to be a browser (needed for some CDNs)
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -19,57 +18,39 @@ HEADERS = {
     "Accept": "*/*"
 }
 
-# Public proxy to bypass Discord CDN blocks
-PROXY_BASE = "https://api.allorigins.win/raw?url="
-
-
 @app.get("/")
 def home():
     return {"status": "OCR API running"}
 
-
 @app.get("/extract")
 def extract_api(request: Request):
-
-    # Get URL parameter
     image_url = request.query_params.get("image_url")
     if not image_url:
         return {"error": "Missing ?image_url="}
 
-    # Fix encoded URLs (Discord sends weird encoding)
+    # clean encoded URL
     image_url = urllib.parse.unquote(image_url)
 
-    # Encode again for proxy
-    encoded = urllib.parse.quote(image_url, safe='')
-    proxy_url = PROXY_BASE + encoded
-
-    # Download via proxy (this bypasses Discord CDN blocks)
     try:
-        resp = requests.get(proxy_url, headers=HEADERS, timeout=20)
+        resp = requests.get(
+            image_url,
+            headers=HEADERS,
+            timeout=20,
+            allow_redirects=True
+        )
     except Exception as e:
         return {"error": f"Request failed: {str(e)}"}
 
     if resp.status_code != 200:
-        return {
-            "error": f"Proxy HTTP {resp.status_code}",
-            "proxy_url": proxy_url
-        }
+        return {"error": f"HTTP {resp.status_code} while downloading image"}
 
-    # Convert to image
     arr = np.frombuffer(resp.content, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     if img is None:
-        return {
-            "error": "Failed to decode image",
-            "note": "Try adding &format=png to URL"
-        }
+        return {"error": "Failed to decode image. Try adding &format=png"}
 
-    # Run OCR
-    codes = extract_codes(img=img)
-
-    return {"codes": codes}
-
+    return {"codes": extract_codes(img=img)}
 
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8080)
