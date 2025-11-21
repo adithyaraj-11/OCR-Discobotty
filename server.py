@@ -24,17 +24,11 @@ def home():
 
 
 @app.get("/extract")
-def extract_api(request: Request):
-
-    image_url = request.query_params.get("image_url")
-
-    if not image_url:
-        return {"error": "Missing ?image_url="}
-
-    # Decode URL (Discord URLs contain encoded chars)
+def extract_api(image_url: str = Query(..., alias="image_url")):
+    # Fix URL encoding issues
     image_url = urllib.parse.unquote(image_url)
 
-    # Download the image
+    # Discord CDN requires a proper User-Agent
     try:
         resp = requests.get(image_url, headers=HEADERS, timeout=20)
     except Exception as e:
@@ -47,11 +41,10 @@ def extract_api(request: Request):
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     if img is None:
-        return {"error": "Failed to decode image. Add &format=png maybe."}
+        return {"error": "Image decode failed. Try adding &format=png"}
 
-    codes = extract_codes(img=img)
+    return {"codes": extract_codes(img=img)}
 
-    return {"codes": codes}
 
 
 if __name__ == "__main__":
