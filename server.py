@@ -24,33 +24,35 @@ def home():
     return {"status": "OCR API running"}
 
 @app.get("/extract")
-def extract_api(image_url: str):
+def extract_api(request: Request):
+
+    image_url = request.query_params.get("image_url")
     if not image_url:
         return {"error": "Missing ?image_url="}
 
-    # Fix encoded URLs (Discord CDN adds ?ex=...)
     image_url = urllib.parse.unquote(image_url)
 
-    # Download image
     try:
-        resp = requests.get(image_url, headers=HEADERS, timeout=20)
+        resp = requests.get(
+            image_url,
+            headers=HEADERS,
+            timeout=20,
+            allow_redirects=True
+        )
     except Exception as e:
-        return {"error": f"Network error: {str(e)}"}
+        return {"error": f"Request failed: {str(e)}"}
 
     if resp.status_code != 200:
         return {"error": f"HTTP {resp.status_code} while downloading image"}
 
-    # Decode into image
     arr = np.frombuffer(resp.content, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     if img is None:
-        return {"error": "Failed to decode image. Try adding &format=png"}
+        return {"error": "Failed to decode image"}
 
-    # Run OCR
     codes = extract_codes(img=img)
     return {"codes": codes}
-
 
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8080)
