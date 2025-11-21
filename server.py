@@ -1,14 +1,15 @@
 import uvicorn
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI
 import requests
 import numpy as np
 import cv2
 import urllib.parse
 
-from extract import extract_codes  
+from extract import extract_codes
 
 app = FastAPI()
 
+# Headers to allow Discord CDN downloads
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -22,29 +23,33 @@ HEADERS = {
 def home():
     return {"status": "OCR API running"}
 
-
 @app.get("/extract")
-def extract_api(image_url: str = Query(..., alias="image_url")):
-    # Fix URL encoding issues
+def extract_api(image_url: str):
+    if not image_url:
+        return {"error": "Missing ?image_url="}
+
+    # Fix encoded URLs (Discord CDN adds ?ex=...)
     image_url = urllib.parse.unquote(image_url)
 
-    # Discord CDN requires a proper User-Agent
+    # Download image
     try:
         resp = requests.get(image_url, headers=HEADERS, timeout=20)
     except Exception as e:
-        return {"error": f"Request failed: {str(e)}"}
+        return {"error": f"Network error: {str(e)}"}
 
     if resp.status_code != 200:
         return {"error": f"HTTP {resp.status_code} while downloading image"}
 
+    # Decode into image
     arr = np.frombuffer(resp.content, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     if img is None:
-        return {"error": "Image decode failed. Try adding &format=png"}
+        return {"error": "Failed to decode image. Try adding &format=png"}
 
-    return {"codes": extract_codes(img=img)}
-
+    # Run OCR
+    codes = extract_codes(img=img)
+    return {"codes": codes}
 
 
 if __name__ == "__main__":
