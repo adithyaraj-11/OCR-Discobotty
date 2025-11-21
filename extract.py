@@ -4,24 +4,34 @@ import cv2
 import re
 import os
 
-DET_MODEL = "models/det.onnx"
-REC_MODEL = "models/rec.onnx"
-ALPHABET = "models/alphabet.txt"
-IMAGE_PATH = ["images/im1.png"]
+# --- PATH SETUP ---
+# This ensures models are found even if you run the server from a different directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DET_MODEL = os.path.join(BASE_DIR, "models/det.onnx")
+REC_MODEL = os.path.join(BASE_DIR, "models/rec.onnx")
+ALPHABET = os.path.join(BASE_DIR, "models/alphabet.txt")
+
+# For local testing only
+TEST_IMAGE_PATHS = ["images/im1.png"]
 
 # --- LOAD ALPHABET ---
-with open(ALPHABET, "r", encoding="utf-8") as f:
-    alphabet = "".join([ln.strip() for ln in f.readlines()])
+if os.path.exists(ALPHABET):
+    with open(ALPHABET, "r", encoding="utf-8") as f:
+        alphabet = "".join([ln.strip() for ln in f.readlines()])
+else:
+    # Fallback or error if file missing
+    alphabet = ""
+    print(f"Warning: Alphabet file not found at {ALPHABET}")
 
 blank_id = 0
 
 # --- SESSIONS ---
+# Initialize sessions once at module level
 det = ort.InferenceSession(DET_MODEL, providers=["CPUExecutionProvider"])
 rec = ort.InferenceSession(REC_MODEL, providers=["CPUExecutionProvider"])
 
-# --- FIXED CROP (your selection) ---
+# --- FIXED CROP ---
 X1, Y1, X2, Y2 = 12, 425, 989, 455
-
 
 
 def resize_pad(img, size=(640, 640)):
@@ -62,7 +72,7 @@ def prepare_rec_input(img, box, height=48):
     x, y, w, h = cv2.boundingRect(box)
     crop = img[y:y+h, x:x+w]
     if crop.size == 0:
-        return None
+        return None, 0
     new_w = max(10, int(w * (height / h)))
     r = cv2.resize(crop, (new_w, height))
     rgb = cv2.cvtColor(r, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
@@ -117,22 +127,30 @@ def kmeans_1d(xs, k=3, iters=20):
     return labels, centers
 
 
-def extract_codes(path):
-    img = cv2.imread(path)
+def extract_codes(img):
+    """
+    Main entry point. 
+    Args:
+        img: A numpy array representing the image (BGR format).
+    """
     if img is None:
-        raise FileNotFoundError(path)
+        raise ValueError("Image is None")
 
-    # --- THE ONLY CHANGE: crop before processing ---
+    # Crop using the fixed coordinates provided
     crop = img[Y1:Y2, X1:X2]
+    
+    # Safety check if crop is invalid (e.g. image too small)
+    if crop.size == 0:
+        return [None, None, None]
 
     boxes = detect_boxes(crop)
     items = []
 
     for b in boxes:
-        rec_in_w = prepare_rec_input(crop, b)
-        if rec_in_w is None:
+        rec_in, box_w = prepare_rec_input(crop, b)
+        if rec_in is None:
             continue
-        rec_in, box_w = rec_in_w
+            
         txt = recognize(rec_in)
 
         cx = int(np.mean(b[:, 0]))
@@ -218,7 +236,12 @@ def extract_codes(path):
 
     return final_codes
 
-
 if __name__ == "__main__":
-    for path in IMAGE_PATH:
-        print(extract_codes(path))
+    # Test functionality
+    for path in TEST_IMAGE_PATHS:
+        if os.path.exists(path):
+            print(f"Processing {path}...")
+            test_img = cv2.imread(path)
+            print(extract_codes(test_img))
+        else:
+            print(f"File not found: {path}")
